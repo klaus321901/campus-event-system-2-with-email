@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Campus Connect | Admin</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" href="data:,">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <div class="container" id="mainContainer">
+        <div id="toast-container"
+            style="position: fixed; bottom: 20px; right: 20px; z-index: 9999; pointer-events: none;"></div>
+
+        <header>
+            <h1>Campus Connect 🚀</h1>
+            <p>Your Portal to Everything Happening on Campus!</p>
+
+            <div class="search-container">
+                <input type="text" id="searchInput" placeholder="Search events (e.g., 'Hackathon', 'Dance')...">
+            </div>
+
+            <div class="controls-wrapper">
+                <div class="filter-group">
+                    <button class="filter-btn active" data-filter="all">All</button>
+                    <button class="filter-btn" data-filter="Technical">Technical</button>
+                    <button class="filter-btn" data-filter="Cultural">Cultural</button>
+                    <button class="filter-btn" data-filter="Sports">Sports</button>
+                </div>
+
+                <select id="clubFilter" class="club-select">
+                    <option value="all">All Clubs</option>
+                </select>
+
+                <div style="display: flex; gap: 10px;">
+                    <div class="toggle-group" style="background: rgba(243, 156, 18, 0.2);">
+                        <button class="admin-btn" onclick="toggleModal('adminModal'); loadAdminEvents();" 
+                            style="border:none; background:none; cursor:pointer; font-weight:700;">
+                            📂 Open Admin Panel
+                        </button>
+                        <button onclick="logout()" 
+                            style="background: none; border: none; color: #ff5252; cursor: pointer; font-weight: 600; margin-left:15px;">
+                            Logout
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main id="eventsGrid" class="events-grid">
+            <div style="grid-column: 1/-1; text-align: center; padding: 50px;">
+                <h2 style="opacity: 0.5;">🚀 Loading Event Magic...</h2>
+            </div>
+        </main>
+
+        <!-- Admin Control Panel Modal -->
+        <div id="adminModal" class="modal">
+            <div class="modal-content" style="max-width: 800px;">
+                <div class="modal-header"
+                    style="justify-content: space-between; align-items: flex-start; margin-bottom: 25px;">
+                    <div>
+                        <h2 style="font-size: 1.8rem; margin: 0; display: flex; align-items: center; gap: 12px;">
+                            <span style="font-size: 1.5rem;">🔐</span> Admin Control Panel
+                        </h2>
+                        <p style="opacity: 0.5; font-size: 0.9rem; margin: 5px 0 0 35px;">Manage campus events and feedback</p>
+                    </div>
+                    <div style="display: flex; gap: 12px;">
+                        <button class="premium-btn add" onclick="openAddEvent()">+ Add Event</button>
+                        <button class="premium-btn close" onclick="closeModal('adminModal')">Close</button>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                    <select id="adminClubFilter" class="club-select" style="flex-grow: 1;" onchange="loadAdminEvents()">
+                        <option value="all">Filter by Club: All</option>
+                    </select>
+                </div>
+
+                <div id="adminEventsList" style="max-height: 500px; overflow-y: auto; padding-right: 10px;">
+                </div>
+            </div>
+        </div>
+
+        <!-- Edit/Add Event Modal -->
+        <div id="editModal" class="modal">
+            <div class="modal-content" style="max-width: 600px;">
+                <div class="modal-header">
+                    <h2 id="editModalTitle">Edit Event Details</h2>
+                </div>
+                <form id="editForm">
+                    <input type="hidden" id="editEventId">
+                    <div class="form-group">
+                        <label>Event Title</label>
+                        <input type="text" id="editTitle" placeholder="Enter title">
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div class="form-group">
+                            <label>Club Name</label>
+                            <input type="text" id="editClubName" placeholder="e.g. csi_mjcet">
+                        </div>
+                        <div class="form-group">
+                            <label>Category</label>
+                            <select id="editCategory">
+                                <option value="Technical">Technical</option>
+                                <option value="Cultural">Cultural</option>
+                                <option value="Sports">Sports</option>
+                                <option value="General">General</option>
+                                <option value="Seminar">Seminar</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div class="form-group">
+                            <input type="date" id="editDate" oninput="updateAdminDateDisplay(this.value)">
+                            <div id="readableDateDisplay"
+                                style="font-size: 0.85rem; color: var(--accent); margin-top: 5px; min-height: 1.2rem;"></div>
+                        </div>
+                        <div class="form-group">
+                            <label>Time (e.g. 8:30 PM - 9:30 PM)</label>
+                            <input type="text" id="editTime" placeholder="8:30 PM - 9:30 PM">
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div class="form-group">
+                            <label>Venue</label>
+                            <input type="text" id="editVenue" placeholder="MJCET Campus">
+                        </div>
+                        <div class="form-group">
+                            <label>Source URL</label>
+                            <input type="text" id="editSourceUrl" placeholder="https://instagram.com/p/...">
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div class="form-group">
+                            <label>Registration Link <span style="opacity:0.5">(Optional)</span></label>
+                            <input type="text" id="editRegLink" placeholder="Google Form/Website URL">
+                        </div>
+                        <div class="form-group">
+                            <label>Poster Image <span style="opacity:0.5">(Optional)</span></label>
+                            <input type="file" id="editImageFile" accept="image/*" style="padding: 8px;">
+                            <input type="hidden" id="editImagePath">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Description <span style="opacity:0.5">(Optional)</span></label>
+                        <textarea id="editDesc" rows="6" placeholder="Tell students about the event..."></textarea>
+                    </div>
+                    <div style="display: flex; gap: 10px; margin-top: 10px;">
+                        <button type="submit" class="submit-btn" id="saveBtn">Save Changes</button>
+                        <button type="button" onclick="closeModal('editModal')" class="submit-btn"
+                            style="background: #444;">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const colors = ['#4A90E2', '#E24A90', '#90E24A', '#E2904A', '#4AE290', '#9B59B6', '#E74C3C', '#3498DB'];
+        let allEvents = [];
+        let adminToken = localStorage.getItem('admin_token');
+
+        // --- AUTH CHECK ---
+        async function checkAdminAuth() {
+            if (!adminToken) {
+                window.location.href = '/admin_login.html';
+                return;
+            }
+            try {
+                const res = await fetch('/users/me', {
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                if (!res.ok) {
+                    window.location.href = '/admin_login.html';
+                    return;
+                }
+                const user = await res.json();
+                if (user.role !== 'super_admin') {
+                    window.location.href = '/admin_login.html';
+                    return;
+                }
+            } catch (e) {
+                window.location.href = '/admin_login.html';
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('admin_token');
+            window.location.href = '/admin_login.html';
+        }
+
+        // --- EVENT LOADING ---
+        async function loadEvents() {
+            try {
+                const res = await fetch('/events/');
+                allEvents = await res.json();
+                populateClubFilter(allEvents);
+                renderEvents(allEvents);
+            } catch (e) {
+                document.getElementById('eventsGrid').innerHTML = 
+                    '<div style="grid-column: 1/-1; text-align: center;"><h2>Error connecting to backend ❌</h2></div>';
+            }
+        }
+
+        async function loadAdminEvents() {
+            try {
+                const res = await fetch('/admin/staging/');
+                const adminEvents = await res.json();
+                populateAdminClubFilter(adminEvents);
+                renderAdminList(adminEvents);
+                allEvents = adminEvents;
+            } catch (e) { console.error(e); }
+        }
+
+        function populateClubFilter(events) {
+            const clubs = [...new Set(events.map(e => e.club_name))].sort();
+            const select = document.getElementById('clubFilter');
+            const current = select.value;
+            select.innerHTML = '<option value="all">All Clubs</option>';
+            clubs.forEach(club => {
+                const opt = document.createElement('option');
+                opt.value = club;
+                opt.textContent = club;
+                select.appendChild(opt);
+            });
+            select.value = current;
+        }
+
+        function populateAdminClubFilter(events) {
+            const clubs = [...new Set(events.map(e => e.club_name))].sort();
+            const select = document.getElementById('adminClubFilter');
+            const current = select.value;
+            select.innerHTML = '<option value="all">Filter by Club: All</option>';
+            clubs.forEach(club => {
+                const opt = document.createElement('option');
+                opt.value = club;
+                opt.textContent = club;
+                select.appendChild(opt);
+            });
+            select.value = current;
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr || dateStr === 'TBA') return 'TBA';
+            try {
+                const date = new Date(dateStr);
+                if (isNaN(date.getTime())) return dateStr;
+                return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+            } catch (e) { return dateStr; }
+        }
+
+        function formatTime(timeStr) {
+            if (!timeStr || timeStr === 'TBA') return '';
+            const t = timeStr.trim().toUpperCase();
+            if (t.includes('AM') || t.includes('PM') || !t.includes(':')) return timeStr;
+            try {
+                const parts = t.split(':');
+                const hours = parseInt(parts[0]);
+                const minutes = parseInt(parts[1]);
+                const date = new Date();
+                date.setHours(hours, minutes);
+                return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+            } catch (e) { return timeStr; }
+        }
+
+        function updateAdminDateDisplay(val) {
+            const display = document.getElementById('readableDateDisplay');
+            if (display) display.textContent = val ? `📅 ${formatDate(val)}` : '';
+        }
+
+        function renderEvents(events) {
+            const grid = document.getElementById('eventsGrid');
+            grid.innerHTML = '';
+
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const category = document.querySelector('.filter-btn.active').dataset.filter;
+            const selectedClub = document.getElementById('clubFilter').value;
+
+            const filtered = events.filter(e => {
+                const matchesSearch = (e.title || "").toLowerCase().includes(searchTerm) ||
+                    (e.club_name || "").toLowerCase().includes(searchTerm);
+                const matchesCategory = category === 'all' ||
+                    (e.category || "").toLowerCase() === category.toLowerCase();
+                const matchesClub = selectedClub === 'all' || e.club_name === selectedClub;
+                return matchesSearch && matchesCategory && matchesClub;
+            });
+
+            if (filtered.length === 0) {
+                grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 100px;"><h2>🔍 No events found</h2></div>';
+                return;
+            }
+
+            filtered.forEach(event => {
+                const clubName = event.club_name || 'Club';
+                const initials = clubName.split('_').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+                const bgColor = colors[clubName.length % colors.length];
+
+                let img = event.image_path || '';
+                if (img && img.includes("data")) img = `/data${img.split("data")[1].replace(/\\/g, "/")}`;
+
+                const hasImage = img && img.trim() !== '';
+                const card = document.createElement('div');
+                card.className = `event-card ${!hasImage ? 'no-image' : ''}`;
+
+                const ratingValue = event.average_rating > 0 ? parseFloat(event.average_rating).toFixed(1) : '—';
+                const reviewsText = event.review_count > 0 ?
+                    `⭐ ${ratingValue} (${event.review_count} reviews)` : 'No reviews yet';
+                const formattedDate = formatDate(event.event_date || event.date_str);
+                const formattedTime = formatTime(event.time);
+
+                // NO Rate or Reminder buttons — clean cards for admin
+                card.innerHTML = `
+                    <div class="card-header-top">
+                        <div class="card-club-info">
+                            <div class="club-avatar" style="background: ${bgColor}">${initials}</div>
+                            <div class="club-meta-text">
+                                <span class="club-name-text">${clubName}</span>
+                                <span class="event-category-tag">${event.category || 'OTHER'}</span>
+                            </div>
+                        </div>
+                    </div>
+                    ${hasImage ? `<div class="card-image-wrap"><img src="${img}" alt="${event.title}" onerror="this.remove()"></div>` : ''}
+                    <div class="card-content">
+                        <div class="rating-line">${reviewsText}</div>
+                        <h3 class="event-title-main">${event.title || 'Event by ' + clubName}</h3>
+                        <div class="event-info-row">
+                            <span style="font-size:0.85rem; opacity:0.8;">📅 ${formattedDate}</span>
+                            ${formattedTime ? `<span style="font-size:0.85rem; opacity:0.8;">⏰ ${formattedTime}</span>` : ''}
+                            <span style="font-size:0.85rem; opacity:0.8;">📍 ${event.venue || 'MJCET Campus'}</span>
+                        </div>
+                        <p class="event-desc-snippet">${event.description || "No description provided."}</p>
+                    </div>
+                `;
+
+                card.onclick = () => window.open(`event_details.html?id=${event.id}`, '_blank');
+                grid.appendChild(card);
+            });
+        }
+
+        function renderAdminList(events) {
+            const list = document.getElementById('adminEventsList');
+            list.innerHTML = '';
+
+            const selectedClub = document.getElementById('adminClubFilter').value;
+            const filtered = events.filter(e => selectedClub === 'all' || e.club_name === selectedClub);
+
+            filtered.forEach(event => {
+                const item = document.createElement('div');
+                item.className = 'admin-event-item';
+                item.innerHTML = `
+                    <div class="admin-event-info">
+                        <div class="admin-event-title">${event.title || 'Untitled'}</div>
+                        <div class="admin-event-club">${event.club_name}</div>
+                    </div>
+                    <div class="admin-actions">
+                        <button class="action-btn feedback" data-event-id="${event.id}" data-event-title="${encodeURIComponent(event.title)}">View Feedback</button>
+                        <button class="action-btn edit" onclick="openEdit(${event.id})">Edit</button>
+                        <button class="action-btn delete" onclick="deleteEvent(${event.id})">Delete</button>
+                    </div>
+                `;
+                item.querySelector('.action-btn.feedback').addEventListener('click', function () {
+                    const id = this.dataset.eventId;
+                    const title = this.dataset.eventTitle;
+                    window.open(`analysis.html?id=${id}&title=${title}`, '_blank');
+                });
+                list.appendChild(item);
+            });
+        }
+
+        async function deleteEvent(id) {
+            if (!confirm("Are you sure? This will delete the event permanently.")) return;
+            await fetch(`/events/${id}`, { method: 'DELETE' });
+            loadEvents();
+            loadAdminEvents();
+        }
+
+        function openAddEvent() {
+            document.getElementById('editEventId').value = '';
+            document.getElementById('editModalTitle').textContent = '➕ Add New Event';
+            document.getElementById('saveBtn').textContent = 'Add Event';
+            document.getElementById('editTitle').value = '';
+            document.getElementById('editClubName').value = '';
+            document.getElementById('editDate').value = '';
+            updateAdminDateDisplay('');
+            document.getElementById('editTime').value = '';
+            document.getElementById('editCategory').value = 'General';
+            document.getElementById('editVenue').value = 'MJCET Campus';
+            document.getElementById('editSourceUrl').value = '';
+            document.getElementById('editRegLink').value = '';
+            document.getElementById('editDesc').value = '';
+            document.getElementById('editImagePath').value = '';
+            toggleModal('editModal');
+        }
+
+        function openEdit(id) {
+            const event = allEvents.find(e => e.id === id);
+            if (!event) return;
+            document.getElementById('editEventId').value = event.id;
+            document.getElementById('editModalTitle').textContent = '📝 Edit Event';
+            document.getElementById('saveBtn').textContent = 'Save Changes';
+            document.getElementById('editTitle').value = event.title || '';
+            document.getElementById('editClubName').value = event.club_name || '';
+            const dVal = event.date_str || (event.event_date ? event.event_date.split('T')[0] : '');
+            document.getElementById('editDate').value = dVal;
+            updateAdminDateDisplay(dVal);
+            document.getElementById('editTime').value = event.time || '';
+            document.getElementById('editCategory').value = event.category || 'General';
+            document.getElementById('editVenue').value = event.venue || '';
+            document.getElementById('editSourceUrl').value = event.source_url || '';
+            document.getElementById('editRegLink').value = event.registration_link || '';
+            document.getElementById('editDesc').value = event.description || '';
+            document.getElementById('editImagePath').value = event.image_path || '';
+            toggleModal('editModal');
+        }
+
+        document.getElementById('editForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('editEventId').value;
+            const fileInput = document.getElementById('editImageFile');
+            let imagePath = document.getElementById('editImagePath').value;
+
+            if (fileInput.files.length > 0) {
+                const formData = new FormData();
+                formData.append('file', fileInput.files[0]);
+                try {
+                    const uploadRes = await fetch('/upload-image', { method: 'POST', body: formData });
+                    const uploadData = await uploadRes.json();
+                    imagePath = uploadData.path;
+                } catch (err) {
+                    return alert("Image upload failed!");
+                }
+            }
+
+            const title = document.getElementById('editTitle').value;
+            const club_name = document.getElementById('editClubName').value;
+            const event_date = document.getElementById('editDate').value;
+
+            if (!title || !club_name || !event_date) {
+                return alert("Title, Club Name, and Date are required!");
+            }
+
+            const valTime = document.getElementById('editTime').value;
+            const data = {
+                title, club_name, event_date,
+                time: valTime, event_time: valTime,
+                category: document.getElementById('editCategory').value,
+                venue: document.getElementById('editVenue').value,
+                source_url: document.getElementById('editSourceUrl').value,
+                registration_link: document.getElementById('editRegLink').value,
+                description: document.getElementById('editDesc').value,
+                image_path: imagePath,
+                is_published: true
+            };
+
+            const method = id ? 'PUT' : 'POST';
+            const endpoint = id ? `/events/${id}` : '/events/add';
+
+            try {
+                const res = await fetch(endpoint, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                if (res.ok) {
+                    closeModal('editModal');
+                    await loadEvents();
+                    await loadAdminEvents();
+                } else {
+                    const err = await res.json();
+                    alert(err.detail || "Save failed");
+                }
+            } catch (err) {
+                alert("Connection failed");
+            }
+        };
+
+        function toggleModal(id) {
+            document.getElementById(id).classList.add('active');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
+        }
+
+        document.getElementById('searchInput').oninput = () => renderEvents(allEvents);
+        document.getElementById('clubFilter').onchange = () => renderEvents(allEvents);
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.onclick = () => {
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                renderEvents(allEvents);
+            };
+        });
+
+        document.addEventListener("DOMContentLoaded", () => {
+            checkAdminAuth();
+            loadEvents();
+        });
+    </script>
+</body>
+
+</html>

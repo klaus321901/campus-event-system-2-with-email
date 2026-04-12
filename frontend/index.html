@@ -38,11 +38,9 @@
                 </select>
 
                 <div id="authActions" style="display: flex; gap: 10px;">
-                    <button class="login-btn" id="loginBtn" onclick="toggleModal('loginModal')">Login /
-                        Register</button>
-                    <button class="admin-btn" id="adminLoginBtn" onclick="window.location.href='admin_login.html'">🔐
-                        Admin Login</button>
-                </div>
+              <button class="login-btn" id="loginBtn" onclick="toggleModal('loginModal')">Login /
+                Register</button>
+            </div>
             </div>
         </header>
 
@@ -392,11 +390,10 @@
                     `;
                 }
             } else {
-                authActions.innerHTML = `
+                         authActions.innerHTML = `
                     <button class="login-btn" id="loginBtn" onclick="toggleModal('loginModal')">Login / Register</button>
-                    <button class="admin-btn" id="adminLoginBtn" onclick="window.location.href='admin_login.html'">🔐 Admin Login</button>
-                `;
-            }
+                     `;
+                }
         }
 
         function logout() {

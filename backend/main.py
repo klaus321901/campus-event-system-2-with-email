@@ -185,6 +185,13 @@ def read_admin_login():
         raise HTTPException(status_code=404, detail="Admin login page not found")
     return FileResponse(frontend_path)
 
+@app.get("/admin.html")
+def read_admin():
+    frontend_path = os.path.join(frontend_dir, "admin.html")
+    if not os.path.exists(frontend_path):
+        raise HTTPException(status_code=404, detail="Admin page not found")
+    return FileResponse(frontend_path)
+
 @app.get("/event_details.html")
 def read_event_details():
     frontend_path = os.path.join(frontend_dir, "event_details.html")
