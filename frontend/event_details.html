@@ -101,6 +101,14 @@
             box-shadow: 0 0 20px rgba(0, 210, 255, 0.4);
         }
 
+        /* ── Google Calendar button ── */
+        .btn-gcal {
+            background: linear-gradient(135deg, #34a853, #0f9d58);
+            box-shadow: 0 0 20px rgba(52, 168, 83, 0.35);
+            text-decoration: none;
+            display: none; /* hidden until event loads */
+        }
+
         .btn-action:hover {
             transform: translateY(-3px) scale(1.02);
             filter: brightness(1.1);
@@ -409,7 +417,99 @@
             body {
                 padding: 20px;
             }
+
+            .action-group {
+                flex-wrap: wrap;
+                justify-content: flex-end;
+            }
+
+            .btn-action {
+                font-size: 0.9rem;
+                padding: 10px 18px;
+            }
         }
+
+        /* ── Toast Notification ── */
+        .cc-toast {
+            position: fixed;
+            top: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-80px);
+            background: rgba(15, 25, 35, 0.97);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 14px;
+            padding: 14px 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-family: 'Poppins', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 500;
+            color: white;
+            z-index: 9999;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            transition: transform 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.35s;
+            opacity: 0;
+            min-width: 280px;
+            max-width: 420px;
+            text-align: center;
+            justify-content: center;
+        }
+        .cc-toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+        .cc-toast.success { border-color: rgba(46,204,113,0.4); }
+        .cc-toast.error   { border-color: rgba(255,82,82,0.4); }
+        .cc-toast.info    { border-color: rgba(0,210,255,0.4); }
+        .cc-toast.warning { border-color: rgba(241,196,15,0.4); }
+
+        /* ── Confirm Dialog ── */
+        .cc-confirm-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(6px);
+            z-index: 9998;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+        .cc-confirm-overlay.show { display: flex; }
+        .cc-confirm-box {
+            background: rgba(15,25,35,0.98);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 18px;
+            padding: 32px;
+            width: 340px;
+            text-align: center;
+        }
+        .cc-confirm-box h3 {
+            font-size: 1.1rem;
+            margin-bottom: 8px;
+            color: white;
+        }
+        .cc-confirm-box p {
+            font-size: 0.9rem;
+            color: rgba(255,255,255,0.6);
+            margin-bottom: 24px;
+        }
+        .cc-confirm-btns {
+            display: flex;
+            gap: 12px;
+        }
+        .cc-confirm-btns button {
+            flex: 1;
+            padding: 12px;
+            border-radius: 10px;
+            border: none;
+            font-weight: 700;
+            font-size: 0.9rem;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        .cc-confirm-yes { background: #ff5252; color: white; }
+        .cc-confirm-no  { background: rgba(255,255,255,0.08); color: white; }
     </style>
 </head>
 
@@ -421,6 +521,12 @@
                 <button class="btn-action btn-rate" id="cardRateBtn">
                     <span style="font-size: 1.4rem;">⭐</span> Rate Event
                 </button>
+
+                <!-- ── Google Calendar Button ── -->
+                <button id="gcalBtn" class="btn-action btn-gcal">
+                    <span style="font-size: 1.2rem;">📅</span> Add to Calendar
+                </button>
+
                 <button class="btn-action btn-remind" id="setReminderBtn" style="display: none;">
                     <span style="font-size: 1.4rem;">🔔</span> Set Reminder
                 </button>
@@ -536,6 +642,131 @@
         let currentUser = null;
         let loadedEvent = null;
 
+        // ─────────────────────────────────────────────
+        // GOOGLE CALENDAR INTEGRATION
+        // ─────────────────────────────────────────────
+
+        /**
+         * Converts a date + time string into a Google Calendar datetime string.
+         * Google Calendar format: YYYYMMDDTHHmmss (local time, no timezone)
+         * e.g. 20250415T140000
+         */
+        function toGCalDateTime(dateObj, timeStr) {
+            // Parse date string parts directly to avoid UTC vs local confusion.
+            // "2026-04-12" parsed by new Date() becomes UTC midnight, which
+            // shifts the date in IST (+5:30). We extract Y/M/D as strings instead.
+            let year, month, day;
+            if (typeof dateObj === 'string' && dateObj.match(/^\d{4}-\d{2}-\d{2}/)) {
+                [year, month, day] = dateObj.slice(0, 10).split('-').map(Number);
+            } else {
+                const base = new Date(dateObj);
+                if (isNaN(base.getTime())) return null;
+                // Use UTC values since the date came from a UTC-parsed string
+                year = base.getUTCFullYear();
+                month = base.getUTCMonth() + 1;
+                day = base.getUTCDate();
+            }
+
+            // Parse the time string
+            let hours = 0, minutes = 0;
+            if (timeStr && timeStr !== 'TBA') {
+                const startTime = extractStartTime(timeStr);
+                const match = startTime && startTime.match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?/i);
+                if (match) {
+                    hours = parseInt(match[1]);
+                    minutes = parseInt(match[2] || 0);
+                    const ampm = match[3] ? match[3].toUpperCase() : null;
+                    if (ampm === 'PM' && hours < 12) hours += 12;
+                    if (ampm === 'AM' && hours === 12) hours = 0;
+                }
+            }
+
+            const pad = n => String(n).padStart(2, '0');
+            return `${year}${pad(month)}${pad(day)}T${pad(hours)}${pad(minutes)}00`;
+        }
+
+        /**
+         * Builds the full Google Calendar "Add Event" URL from a loaded event object.
+         * Returns null if essential date info is missing.
+         */
+        function buildGoogleCalendarURL(event) {
+            const dateStr = event.event_date || event.date_str;
+            if (!dateStr || dateStr === 'TBA') return null;
+
+            const startDT = toGCalDateTime(dateStr, event.time);
+            if (!startDT) return null;
+
+            // End time: try to parse range (e.g. "2:00 PM - 4:00 PM"), else add 1 hour
+            let endDT = null;
+            if (event.time && event.time !== 'TBA') {
+                const parts = event.time.split(/\s*(?:-|–|\bto\b)\s*/i);
+                if (parts.length >= 2) {
+                    // There's an explicit end time in the string
+                    const base = new Date(dateStr);
+                    const match = parts[1].trim().match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?/i);
+                    if (match) {
+                        let eh = parseInt(match[1]);
+                        let em = parseInt(match[2] || 0);
+                        const eampm = match[3] ? match[3].toUpperCase() : null;
+                        if (eampm === 'PM' && eh < 12) eh += 12;
+                        if (eampm === 'AM' && eh === 12) eh = 0;
+                        const pad = n => String(n).padStart(2, '0');
+                        endDT = `${base.getFullYear()}${pad(base.getMonth()+1)}${pad(base.getDate())}T${pad(eh)}${pad(em)}00`;
+                    }
+                }
+            }
+
+            if (!endDT) {
+                // Add 1 hour to start by simple string arithmetic (avoids timezone issues)
+                let eh = parseInt(startDT.slice(9,11)) + 1;
+                let ed = parseInt(startDT.slice(6,8));
+                let em_val = parseInt(startDT.slice(11,13));
+                let emo = parseInt(startDT.slice(4,6));
+                let eyr = parseInt(startDT.slice(0,4));
+                if (eh >= 24) { eh = eh - 24; ed += 1; } // handle midnight rollover
+                const pad = n => String(n).padStart(2, '0');
+                endDT = `${eyr}${pad(emo)}${pad(ed)}T${pad(eh)}${pad(em_val)}00`;
+            }
+
+            const params = new URLSearchParams({
+                action: 'TEMPLATE',
+                text: event.title || 'Campus Event',
+                dates: `${startDT}/${endDT}`,
+                details: (event.description || '').slice(0, 1500),
+                location: event.venue || 'MJCET Campus',
+                ctz: 'Asia/Kolkata',  // tells Google Calendar these times are IST
+            });
+
+            return `https://calendar.google.com/calendar/render?${params.toString()}`;
+        }
+
+        /**
+         * Wires up the Google Calendar button once event data is loaded.
+         * Shows the button only if date info is valid.
+         */
+        function updateGCalButton(event) {
+            const btn = document.getElementById('gcalBtn');
+            if (!btn) return;
+
+            const url = buildGoogleCalendarURL(event);
+            if (url) {
+                btn.style.display = 'flex';
+                btn.onclick = () => {
+                    if (!authToken) {
+                        showToast("Please log in to continue.", "info");
+                        return;
+                    }
+                    window.open(url, '_blank', 'noopener,noreferrer');
+                };
+            } else {
+                btn.style.display = 'none';
+            }
+        }
+
+        // ─────────────────────────────────────────────
+        // END GOOGLE CALENDAR INTEGRATION
+        // ─────────────────────────────────────────────
+
         async function checkAuth() {
             if (!authToken) return null;
             try {
@@ -557,7 +788,6 @@
             currentEventId = id;
             if (!id) return;
 
-            // 1. Initial Auth Check and Notification Request
             await checkAuth();
             if (Notification.permission === 'default') {
                 Notification.requestPermission();
@@ -599,7 +829,10 @@
         function updateReminderUI() {
             if (!loadedEvent) return;
             const eventDateTime = parseTimeToDate(loadedEvent.event_date || loadedEvent.date_str, loadedEvent.time);
-            const isPast = eventDateTime && eventDateTime <= new Date();
+            const dateStr = loadedEvent.event_date || loadedEvent.date_str;
+            const todayStr = new Date().toISOString().slice(0, 10);
+            const dateOnlyPast = dateStr && dateStr !== 'TBA' ? dateStr.slice(0, 10) < todayStr : false;
+           const isPast = (eventDateTime && eventDateTime <= new Date()) || dateOnlyPast;
 
             const setBtn = document.getElementById('setReminderBtn');
             const activeUI = document.getElementById('activeReminderUI');
@@ -608,11 +841,30 @@
             if (!setBtn || !activeUI) return;
 
             if (!currentUser || currentUser.role !== 'student') {
-                // Keep setReminderBtn visible for guests to trigger login alert
-                setBtn.style.display = 'inline-block';
                 activeUI.style.display = 'none';
-                return;
-            }
+            if (isPast) {
+            setBtn.style.display = 'inline-block';
+            setBtn.innerHTML = "🏳️ Event Ended";
+            setBtn.disabled = true;
+            setBtn.style.opacity = "0.5";
+    } else if (eventDateTime) {
+        const diff = eventDateTime - new Date();
+        if (diff < 1800000) {
+            setBtn.style.display = 'inline-block';
+            setBtn.innerHTML = "🕒 Event Starting Soon";
+            setBtn.disabled = true;
+            setBtn.style.opacity = "0.7";
+        } else {
+            setBtn.style.display = 'inline-block';
+            setBtn.innerHTML = "🔔 Set Reminder";
+            setBtn.disabled = false;
+            setBtn.style.opacity = "1";
+        }
+    } else {
+        setBtn.style.display = 'none';
+    }
+    return;
+}
 
             const existing = getReminderForEvent(currentEventId);
 
@@ -622,9 +874,9 @@
                 statusTxt.innerText = "Reminder set for " + (reminderLabels[existing.type] || "this event");
             } else {
                 activeUI.style.display = 'none';
-                if (!isPast && loadedEvent.time !== 'TBA') {
+                if (!isPast && eventDateTime) {
                     const diff = eventDateTime - new Date();
-                    if (diff < 1800000) { // Less than 30 minutes
+                    if (diff < 1800000) {
                         setBtn.style.display = 'inline-block';
                         setBtn.innerHTML = "🕒 Event Starting Soon";
                         setBtn.disabled = true;
@@ -654,7 +906,6 @@
         function formatTime(timeStr) {
             if (!timeStr || timeStr === 'TBA') return '';
             const t = timeStr.trim().toUpperCase();
-            // If already has AM/PM or doesn't look like HH:MM, return as is
             if (t.includes('AM') || t.includes('PM') || !t.includes(':')) return timeStr;
 
             try {
@@ -670,7 +921,6 @@
 
         function extractStartTime(timeStr) {
             if (!timeStr) return null;
-            // Split by dash, en-dash, or 'to' (case-insensitive for 'to')
             const parts = timeStr.split(/\s*(?:-|–|\bto\b)\s*/i);
             return parts[0].trim();
         }
@@ -680,14 +930,18 @@
             const start = extractStartTime(timeStr);
             if (!start) return null;
 
-            // Extract Y/M/D from the dateObj safely
-            const baseDate = new Date(dateObj);
-            if (isNaN(baseDate.getTime())) return null;
+            let year, month, day;
+            if (typeof dateObj === 'string' && dateObj.match(/^\d{4}-\d{2}-\d{2}/)) {
+              [year, month, day] = dateObj.slice(0, 10).split('-').map(Number);
+            } else {
+            const base = new Date(dateObj);
+            if (isNaN(base.getTime())) return null;
+            year = base.getUTCFullYear();
+            month = base.getUTCMonth() + 1;
+            day = base.getUTCDate();
+}
+const dt = new Date(year, month - 1, day);
 
-            // Construct new Date using local components to avoid timezone offsets from strings
-            const dt = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate());
-
-            // Support HH:mm or HH:mm AM/PM
             const timeMatch = start.match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?/i);
             if (!timeMatch) return null;
 
@@ -717,7 +971,9 @@
             const todayNow = new Date();
             const isPast = eventDateTime && eventDateTime <= todayNow;
 
-            // Handle Reminder UI State
+            // Wire up Google Calendar button
+            updateGCalButton(event);
+
             updateReminderUI();
             setInterval(() => {
                 updateReminderUI();
@@ -726,10 +982,7 @@
             const hasImage = img && img.trim() !== '';
             document.getElementById('eventDisplay').innerHTML = `
                 <div class="event-main ${!hasImage ? 'no-image' : ''}">
-                    <!-- LEFT: Image -->
                     ${hasImage ? `<div class="image-container"><img src="${img}" class="event-image" onerror="this.remove()"></div>` : ''}
-
-                    <!-- RIGHT: Info Panel -->
                     <div class="info-panel">
                         <div class="club-header">
                             <div class="club-dp" style="background: ${bgColor};">${initials}</div>
@@ -762,18 +1015,18 @@
             `;
 
             document.getElementById('cardRateBtn').onclick = () => {
-                if (!authToken) return alert("Please Login on the dashboard first to leave a review!");
+                if (!authToken) return showToast("Please log in to continue.", "info");
                 document.getElementById('rateModal').classList.add('active');
             };
             const openModalHandler = (e) => {
                 e.preventDefault();
                 if (!authToken) {
-                    alert("Please log in to continue.");
+                    showToast("Please log in to continue.", "info");
                     return;
                 }
 
                 const eventStart = parseTimeToDate(loadedEvent.event_date || loadedEvent.date_str, loadedEvent.time);
-                if (!eventStart) return alert("Could not parse event date/time.");
+                if (!eventStart) return showToast("Could not determine event time.", "error");
 
                 const now = Date.now();
                 const deltaMap = { '30m': 1800000, '1h': 3600000, '3h': 10800000, '24h': 86400000 };
@@ -782,7 +1035,6 @@
                 const modalSub = document.getElementById('remModalSub');
                 const grid = document.getElementById('remOptionsGrid');
 
-                // Pre-selection check
                 const existing = getReminderForEvent(currentEventId);
                 selectedReminderType = existing ? existing.type : null;
 
@@ -792,7 +1044,6 @@
                         const triggerTime = eventStart.getTime() - deltaMap[key];
                         const isPast = triggerTime <= now;
 
-                        // Hide the currently active reminder option
                         if (existing && key === existing.type) {
                             btn.style.display = "none";
                         } else {
@@ -804,7 +1055,6 @@
                         btn.style.cursor = isPast ? "not-allowed" : "pointer";
                         btn.title = isPast ? "Time passed" : "";
                         
-                        // Apply pre-selection / reset highlights
                         if (key === selectedReminderType) {
                             btn.style.background = 'var(--accent)';
                             btn.style.color = 'black';
@@ -844,7 +1094,7 @@
             if (followBtn) {
                 checkFollowing(event.club_name);
                 followBtn.onclick = async () => {
-                    if (!authToken) return alert("Please Login to follow clubs!");
+                    if (!authToken) return showToast("Please log in to continue.", "info");
                     try {
                         const res = await fetch(`${API_URL}/clubs/${encodeURIComponent(event.club_name)}/follow`, {
                             method: 'POST',
@@ -882,8 +1132,6 @@
 
         function selectReminderOption(type) {
             selectedReminderType = type;
-            
-            // UI Update: highlight selected, dim others
             const options = ['30m', '1h', '3h', '24h'];
             options.forEach(opt => {
                 const btn = document.getElementById('remBtn' + opt);
@@ -900,7 +1148,6 @@
                 }
             });
 
-            // Enable OK button
             const confirmBtn = document.getElementById('remConfirmBtn');
             if (confirmBtn) {
                 confirmBtn.disabled = false;
@@ -916,86 +1163,105 @@
         }
 
         function setReminder(type) {
-    if (!authToken) return alert("Please Login first!");
-    if (!currentUser || currentUser.role !== 'student') return alert("Only students can set reminders.");
-    if (!loadedEvent || !loadedEvent.event_date || !loadedEvent.time) return alert("Missing event date/time!");
+            if (!authToken) return showToast("Please log in to continue.", "info");
+            if (!currentUser || currentUser.role !== 'student') return showToast("Only students can set reminders.", "warning");
+            if (!loadedEvent || !loadedEvent.event_date || !loadedEvent.time) return showToast("Missing event date/time.", "error");
 
-    const deltaMap = {
-        '30m': 30 * 60 * 1000,
-        '1h': 60 * 60 * 1000,
-        '3h': 3 * 60 * 60 * 1000,
-        '24h': 24 * 60 * 60 * 1000
-    };
+            const deltaMap = {
+                '30m': 30 * 60 * 1000,
+                '1h': 60 * 60 * 1000,
+                '3h': 3 * 60 * 60 * 1000,
+                '24h': 24 * 60 * 60 * 1000
+            };
 
-    const eventStart = parseTimeToDate(
-        loadedEvent.event_date || loadedEvent.date_str,
-        loadedEvent.time
-    );
+            const eventStart = parseTimeToDate(
+                loadedEvent.event_date || loadedEvent.date_str,
+                loadedEvent.time
+            );
 
-    if (!eventStart) return alert("Could not parse event time.");
+            if (!eventStart) return showToast("Could not determine event time.", "error");
 
-    const triggerTime = eventStart.getTime() - deltaMap[type];
+            const triggerTime = eventStart.getTime() - deltaMap[type];
 
-    if (triggerTime <= Date.now()) {
-        return alert("Reminder time has already passed.");
-    }
+            if (triggerTime <= Date.now()) {
+                return showToast("Reminder time has already passed.", "warning");
+            }
 
-    let reminders = JSON.parse(localStorage.getItem("campus_event_reminders") || "[]");
+            let reminders = JSON.parse(localStorage.getItem("campus_event_reminders") || "[]");
 
-    const eventId = loadedEvent.id || currentEventId;
-    const reminderId = `event_${eventId}_${triggerTime}`;
+            const eventId = loadedEvent.id || currentEventId;
+            const reminderId = `event_${eventId}_${triggerTime}`;
 
-    const exists = reminders.some(r => r.id === reminderId);
-    if (exists) {
-        alert("Reminder already set.");
-        document.getElementById('remModal').classList.remove('active');
-        return;
-    }
+            const exists = reminders.some(r => r.id === reminderId);
+            if (exists) {
+                showToast("Reminder already set.", "info");
+                document.getElementById('remModal').classList.remove('active');
+                return;
+            }
 
-    reminders.push({
-        id: reminderId,
-        eventId: eventId,
-        title: loadedEvent.title || "Event",
-        triggerTime: triggerTime,
-        notified: false,
-        type: type,
-        eventLink: `/event_details.html?id=${eventId}`
-    });
+            reminders.push({
+                id: reminderId,
+                eventId: eventId,
+                title: loadedEvent.title || "Event",
+                triggerTime: triggerTime,
+                notified: false,
+                type: type,
+                eventLink: `/event_details.html?id=${eventId}`
+            });
 
-    localStorage.setItem("campus_event_reminders", JSON.stringify(reminders));
+            localStorage.setItem("campus_event_reminders", JSON.stringify(reminders));
 
-    let labelMap = {
-        '30m': '30 minutes',
-        '1h': '1 hour',
-        '3h': '3 hours',
-        '24h': '1 day'
-    };
+            let labelMap = {
+                '30m': '30 minutes',
+                '1h': '1 hour',
+                '3h': '3 hours',
+                '24h': '1 day'
+            };
 
-    alert("Reminder has been set for " + labelMap[type]);
-
-    document.getElementById('remModal').classList.remove('active');
-
-    updateReminderUI();
-}
-
-        function cancelReminder() {
-            if (!confirm("Remove this reminder?")) return;
-            const reminders = JSON.parse(localStorage.getItem('campus_event_reminders') || '[]');
-            const filtered = reminders.filter(r => String(r.eventId) !== String(currentEventId));
-            localStorage.setItem('campus_event_reminders', JSON.stringify(filtered));
+            showToast("Reminder set for " + labelMap[type] + " before the event! 🔔", "success");
+            document.getElementById('remModal').classList.remove('active');
             updateReminderUI();
         }
 
+        function cancelReminder() {
+            ccConfirm("Remove Reminder", "Are you sure you want to remove this reminder?", () => {
+                const reminders = JSON.parse(localStorage.getItem('campus_event_reminders') || '[]');
+                const filtered = reminders.filter(r => String(r.eventId) !== String(currentEventId));
+                localStorage.setItem('campus_event_reminders', JSON.stringify(filtered));
+                showToast("Reminder removed.", "info");
+                updateReminderUI();
+            });
+        }
 
+        // ── Campus Connect Toast & Confirm ──
+        let toastTimer = null;
+        function showToast(msg, type = 'info', duration = 2800) {
+            const t = document.getElementById('ccToast');
+            if (!t) return;
+            const icons = { success: '✅', error: '❌', info: 'ℹ️', warning: '⚠️' };
+            t.className = `cc-toast ${type}`;
+            t.innerHTML = `<span>${icons[type] || 'ℹ️'}</span> ${msg}`;
+            t.classList.add('show');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => t.classList.remove('show'), duration);
+        }
 
-        // Run checker every 20 seconds
-
-
+        function ccConfirm(title, msg, onYes) {
+            const overlay = document.getElementById('ccConfirmOverlay');
+            document.getElementById('ccConfirmTitle').textContent = title;
+            document.getElementById('ccConfirmMsg').textContent = msg;
+            overlay.classList.add('show');
+            document.getElementById('ccConfirmYes').onclick = () => {
+                overlay.classList.remove('show');
+                onYes();
+            };
+            document.getElementById('ccConfirmNo').onclick = () => overlay.classList.remove('show');
+        }
 
         document.getElementById('rateForm').onsubmit = async (e) => {
             e.preventDefault();
             const ratingInput = document.querySelector('input[name="rating"]:checked');
-            if (!ratingInput) return alert("Please select a star rating!");
+            if (!ratingInput) return showToast("Please select a star rating!", "warning");
             const ratingValue = ratingInput.value;
 
             try {
@@ -1009,21 +1275,35 @@
                     })
                 });
                 if (res.ok) {
-                    alert("Thanks for your review! ⭐");
+                    showToast("Thanks for your review! ⭐", "success");
                     closeModals();
-                    loadData();
                 } else {
                     const data = await res.json();
-                    alert(data.detail || "Error submitting review");
+                    showToast(data.detail || "Error submitting review", "error");
                 }
-            } catch (e) { alert("Error submitting review"); }
+            } catch (e) { showToast("Error submitting review", "error"); }
         };
 
         function closeModals() { document.querySelectorAll('.modal').forEach(m => m.classList.remove('active')); }
         window.onclick = (e) => { if (e.target.className === 'modal active') closeModals(); }
 
-        loadData();
+        loadData(); // single call only
     </script>
+
+    <!-- Campus Connect Toast -->
+    <div id="ccToast" class="cc-toast"></div>
+
+    <!-- Campus Connect Confirm Dialog -->
+    <div id="ccConfirmOverlay" class="cc-confirm-overlay">
+        <div class="cc-confirm-box">
+            <h3 id="ccConfirmTitle">Are you sure?</h3>
+            <p id="ccConfirmMsg"></p>
+            <div class="cc-confirm-btns">
+                <button class="cc-confirm-yes" id="ccConfirmYes">Yes, Remove</button>
+                <button class="cc-confirm-no" id="ccConfirmNo">Cancel</button>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>

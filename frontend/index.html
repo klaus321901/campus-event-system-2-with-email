@@ -238,22 +238,23 @@
         </div>
     </div>
 
-    <div id="remModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>🔔 Set Reminder</h2>
-                <p>Choose when to be notified:</p>
-            </div>
-            <div class="rem-grid">
-                <button onclick="setReminder('30m')">30 Min Before</button>
-                <button onclick="setReminder('1h')">1 Hour Before</button>
-                <button onclick="setReminder('3h')">3 Hours Before</button>
-                <button onclick="setReminder('24h')">1 Day Before</button>
-            </div>
-            <button class="modal-cancel-btn" onclick="closeAllModals()">Cancel</button>
+   <div id="remModal" class="modal">
+    <div style="background:rgba(20,30,40,0.97); backdrop-filter:blur(30px); padding:35px; border-radius:24px; width:90%; max-width:460px; border:1px solid rgba(255,255,255,0.1); position:relative; box-shadow:0 40px 100px rgba(0,0,0,0.8);">
+        <button onclick="closeAllModals()" style="position:absolute; top:12px; right:12px; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); color:white; font-size:1rem; cursor:pointer; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center;">✕</button>
+        <div style="text-align:center; margin-bottom:25px;">
+            <h2 style="font-size:1.5rem; margin-bottom:8px;">🔔 Set Reminder</h2>
+            <p id="remModalSub" style="opacity:0.6; font-size:0.95rem;">Choose when to be notified:</p>
         </div>
+        <div id="remOptionsGrid" style="display:grid; grid-template-columns:1fr 1fr; gap:15px; margin-bottom:20px;">
+            <button id="remBtn30m" onclick="selectCardReminder('30m')" class="rem-option-btn">30 Min Before</button>
+            <button id="remBtn1h" onclick="selectCardReminder('1h')" class="rem-option-btn">1 Hour Before</button>
+            <button id="remBtn3h" onclick="selectCardReminder('3h')" class="rem-option-btn">3 Hours Before</button>
+            <button id="remBtn24h" onclick="selectCardReminder('24h')" class="rem-option-btn">1 Day Before</button>
+        </div>
+        <button id="remConfirmBtn" onclick="confirmCardReminder()" disabled style="width:100%; padding:14px; background:var(--accent); color:black; border-radius:12px; font-weight:800; border:none; cursor:pointer; opacity:0.3; pointer-events:none; margin-bottom:10px;">OK</button>
     </div>
-
+</div>
+       
     <script>
         const colors = ['#4A90E2', '#E24A90', '#90E24A', '#E2904A', '#4AE290', '#9B59B6', '#E74C3C', '#3498DB'];
 
@@ -262,6 +263,7 @@
         let currentUser = null;
         let isRegisterMode = false;
         let isAdminView = false;
+        let selectedCardReminderType = null;
         let currentEventId = null;
 
         // --- AUTH LOGIC ---
@@ -398,10 +400,11 @@
 
         function logout() {
             localStorage.removeItem('access_token');
+            localStorage.removeItem('admin_token');
             authToken = null;
             currentUser = null;
-            window.location.href = '/'; // Redirect to landing
-        }
+            window.location.href = '/';
+}
 
         document.getElementById('authToggle').onclick = (e) => {
             e.preventDefault();
@@ -636,6 +639,20 @@
             }
         }
 
+        function parseCardTime(dateStr, timeStr) {
+         if (!dateStr || !timeStr) return null;
+        const parts = timeStr.split(/\s*(?:-|–|\bto\b)\s*/i);
+        const start = parts[0].trim();
+        const match = start.match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?/i);
+        if (!match) return null;
+        const [y, m, d] = dateStr.slice(0, 10).split('-').map(Number);
+        let h = parseInt(match[1]), min = parseInt(match[2] || 0);
+        const ampm = match[3] ? match[3].toUpperCase() : null;
+        if (ampm === 'PM' && h < 12) h += 12;
+        if (ampm === 'AM' && h === 12) h = 0;
+        const dt = new Date(y, m - 1, d, h, min, 0, 0);
+        return isNaN(dt.getTime()) ? null : dt;
+        }
 
 
         function renderEvents(events) {
@@ -689,8 +706,25 @@
                         </div>
                         <div class="card-actions">
                             <button class="mini-action-btn rate" onclick="handleRateClick(event, ${event.id})">⭐ Rate</button>
-                            <button class="mini-action-btn reminder-btn" onclick="handleReminderClick(event, ${event.id})">🔔 Reminder</button>
-                        </div>
+                            ${(function() {
+                           const dateStr = event.event_date || event.date_str;
+                           const todayStr = new Date().toISOString().slice(0, 10);
+                           const dateOnlyPast = dateStr && dateStr !== 'TBA' ? dateStr.slice(0, 10) < todayStr : false;
+                           const eventDT = parseCardTime(dateStr, event.time);
+                           const isPast = (eventDT && eventDT <= new Date()) || dateOnlyPast;
+                           const diff = eventDT ? eventDT - new Date() : null;
+                         if (isPast) return '<button class="mini-action-btn reminder-btn" disabled style="opacity:0.85;cursor:default;">🏳️ Event Ended</button>';
+                        if (diff !== null && diff < 1800000) return '<button class="mini-action-btn reminder-btn" disabled style="opacity:0.7;cursor:default;">🕒 Starting Soon</button>';
+                       if (!event.time || event.time.trim() === '') {
+                        return '<button class="mini-action-btn reminder-btn" disabled style="opacity:1;cursor:default;background:linear-gradient(135deg,#00b4cc,#0088aa);">🗓️ Upcoming</button>';
+}
+if (authToken) {
+    const existingRem = JSON.parse(localStorage.getItem("campus_event_reminders") || "[]").find(r => String(r.eventId) === String(event.id) && !r.notified);
+    if (existingRem) return `<button class="mini-action-btn reminder-btn" onclick="handleReminderClick(event, ${event.id})" style="opacity:1;background:linear-gradient(135deg,#00b894,#00cec9);">✅ Reminder Set</button>`;
+}
+return `<button class="mini-action-btn reminder-btn" onclick="handleReminderClick(event, ${event.id})">🔔 Reminder</button>`;
+                    })()}
+                    </div>
                     </div>
                     ${hasImage ? `<div class="card-image-wrap"><img src="${img}" alt="${event.title}" onerror="this.remove()"></div>` : ''}
                     <div class="card-content">
@@ -710,26 +744,202 @@
             });
         }
 
-        function handleReminderClick(event, id) {
-            event.stopPropagation();
-            if (!authToken) {
-                alert("Please Login on the dashboard first to leave a review!");
-                return;
-            }
-            // For now (no backend logic yet)
-            alert("Reminder feature coming soon! ⏰");
-        }
+       function showIndexToast(msg, duration = 4000) {
+    const existing = document.getElementById('indexToast');
+    if (existing) existing.remove();
 
-        function handleRateClick(event, id) {
-            event.stopPropagation();
-            if (!authToken) {
-                alert("Please Login on the dashboard first to leave a review!");
-                return;
-            }
-            currentEventId = id;
-            document.getElementById('rateModal').classList.add('active');
-        }
+    const toast = document.createElement('div');
+    toast.id = 'indexToast';
+    toast.style.cssText = `
+        position: fixed;
+        top: 28px;
+        left: 50%;
+        transform: translateX(-50%) translateY(-80px);
+        background: rgba(15, 25, 35, 0.97);
+        border: 1px solid rgba(0, 210, 255, 0.4);
+        border-radius: 14px;
+        padding: 18px 32px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-family: 'Poppins', sans-serif;
+        font-size: 1rem;
+        font-weight: 500;
+        color: white;
+        z-index: 99999;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+        transition: transform 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.35s;
+        opacity: 0;
+        min-width: 300px;
+        max-width: 460px;
+        text-align: center;
+        justify-content: center;
+        pointer-events: none;
+    `;
+    toast.innerHTML = `<span>ℹ️</span> ${msg}`;
+    document.body.appendChild(toast);
 
+    setTimeout(() => {
+        toast.style.transform = 'translateX(-50%) translateY(0)';
+        toast.style.opacity = '1';
+    }, 50);
+
+    setTimeout(() => {
+        toast.style.transform = 'translateX(-50%) translateY(-80px)';
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 400);
+    }, duration);
+}
+
+function handleReminderClick(e, id) {
+    e.stopPropagation();
+    if (!authToken) {
+        showIndexToast("Please log in to continue.");
+        return;
+    }
+    const event = allEvents.find(ev => ev.id === id);
+    if (!event) return;
+    currentEventId = id;
+    openCardReminderModal(event);
+}
+function openCardReminderModal(event) {
+    const dateStr = event.event_date || event.date_str;
+    const eventStart = parseCardTime(dateStr, event.time);
+    const now = Date.now();
+    const deltaMap = { '30m': 1800000, '1h': 3600000, '3h': 10800000, '24h': 86400000 };
+
+    const existing = JSON.parse(localStorage.getItem("campus_event_reminders") || "[]")
+        .find(r => String(r.eventId) === String(event.id) && !r.notified);
+
+    selectedCardReminderType = null;
+
+    let validCount = 0;
+    const modalSub = document.getElementById('remModalSub');
+    const grid = document.getElementById('remOptionsGrid');
+
+    Object.keys(deltaMap).forEach(key => {
+        const btn = document.getElementById('remBtn' + key);
+        if (btn) {
+            const triggerTime = eventStart ? eventStart.getTime() - deltaMap[key] : 0;
+            const isPast = !eventStart || triggerTime <= now;
+            const isCurrentReminder = existing && key === existing.type;
+
+            btn.style.display = isCurrentReminder ? 'none' : 'block';
+            btn.disabled = isPast;
+            btn.style.opacity = isPast ? '0.3' : '1';
+            btn.style.cursor = isPast ? 'not-allowed' : 'pointer';
+            btn.classList.remove('selected');
+
+            if (!isPast && !isCurrentReminder) validCount++;
+        }
+    });
+
+    const confirmBtn = document.getElementById('remConfirmBtn');
+    confirmBtn.disabled = true;
+    confirmBtn.style.opacity = '0.3';
+    confirmBtn.style.pointerEvents = 'none';
+
+    // Update cancel reminder button
+    let cancelRemBtn = document.getElementById('cardCancelRemBtn');
+    if (!cancelRemBtn) {
+    cancelRemBtn = document.createElement('button');
+    cancelRemBtn.id = 'cardCancelRemBtn';
+    cancelRemBtn.style.cssText = 'width:100%; padding:14px; background:rgba(255,82,82,0.1); border:1px solid #ff5252; border-radius:12px; color:#ff5252; font-weight:700; cursor:pointer; margin-top:10px; display:none;';
+    cancelRemBtn.textContent = '🗑️ Cancel Reminder';
+    document.getElementById('remModal').querySelector('div').appendChild(cancelRemBtn);
+}
+
+    if (existing) {
+        cancelRemBtn.style.display = 'block';
+        cancelRemBtn.onclick = () => {
+            const reminders = JSON.parse(localStorage.getItem('campus_event_reminders') || '[]');
+            localStorage.setItem('campus_event_reminders', JSON.stringify(
+                reminders.filter(r => String(r.eventId) !== String(event.id))
+            ));
+            showIndexToast("Reminder removed.");
+            closeAllModals();
+            renderEvents(allEvents);
+        };
+        if (modalSub) modalSub.innerHTML = `Reminder set for <b>${existing.type === '30m' ? '30 minutes' : existing.type === '1h' ? '1 hour' : existing.type === '3h' ? '3 hours' : '1 day'}</b> before. Update:`;
+    } else {
+        cancelRemBtn.style.display = 'none';
+        if (modalSub) modalSub.innerHTML = "Choose when to be notified:";
+    }
+
+    if (modalSub && grid) {
+        if (!eventStart || validCount === 0) {
+            if (!existing) modalSub.innerHTML = "<span style='color:#ff5252;font-weight:700;'>❌ This event is too close to set reminders</span>";
+            grid.style.display = 'none';
+        } else {
+            grid.style.display = 'grid';
+        }
+    }
+
+    document.getElementById('remModal').classList.add('active');
+}
+
+function selectCardReminder(type) {
+    selectedCardReminderType = type;
+    ['30m', '1h', '3h', '24h'].forEach(opt => {
+        const btn = document.getElementById('remBtn' + opt);
+        if (btn) {
+            btn.classList.toggle('selected', opt === type);
+        }
+    });
+    const confirmBtn = document.getElementById('remConfirmBtn');
+    confirmBtn.disabled = false;
+    confirmBtn.style.opacity = '1';
+    confirmBtn.style.pointerEvents = 'auto';
+}
+
+function confirmCardReminder() {
+    if (!selectedCardReminderType) return;
+    const event = allEvents.find(ev => ev.id === currentEventId);
+    if (!event) return;
+
+    const dateStr = event.event_date || event.date_str;
+    const eventStart = parseCardTime(dateStr, event.time);
+    if (!eventStart) return showIndexToast("Could not determine event time.");
+
+    const deltaMap = { '30m': 1800000, '1h': 3600000, '3h': 10800000, '24h': 86400000 };
+    const triggerTime = eventStart.getTime() - deltaMap[selectedCardReminderType];
+
+    if (triggerTime <= Date.now()) return showIndexToast("Reminder time has already passed.");
+
+    let reminders = JSON.parse(localStorage.getItem("campus_event_reminders") || "[]");
+    const reminderId = `event_${currentEventId}_${triggerTime}`;
+
+    if (reminders.some(r => r.id === reminderId)) {
+        showIndexToast("Reminder already set.");
+        closeAllModals();
+        return;
+    }
+
+    reminders.push({
+        id: reminderId,
+        eventId: currentEventId,
+        title: event.title || "Event",
+        triggerTime: triggerTime,
+        notified: false,
+        type: selectedCardReminderType,
+        eventLink: `/event_details.html?id=${currentEventId}`
+    });
+
+    localStorage.setItem("campus_event_reminders", JSON.stringify(reminders));
+    showIndexToast("Reminder set! 🔔");
+    closeAllModals();
+    renderEvents(allEvents);
+}
+
+function handleRateClick(event, id) {
+    event.stopPropagation();
+    if (!authToken) {
+        showIndexToast("Please log in to continue.");
+        return;
+    }
+    currentEventId = id;
+    document.getElementById('rateModal').classList.add('active');
+}
         document.getElementById('rateForm').onsubmit = async (e) => {
             e.preventDefault();
             const ratingInput = document.querySelector('input[name="rating"]:checked');
@@ -746,16 +956,16 @@
                         user_name: currentUser ? currentUser.username : "User"
                     })
                 });
-                if (res.ok) {
-                    alert("Thanks for your review! ⭐");
-                    closeAllModals();
-                    loadEvents();
-                    document.getElementById('rateForm').reset();
-                } else {
-                    const data = await res.json();
-                    alert(data.detail || "Error submitting review");
-                }
-            } catch (e) { alert("Error submitting review"); }
+    if (res.ok) {
+    showIndexToast("Thanks for your review! ⭐");
+    closeAllModals();
+    loadEvents();
+    document.getElementById('rateForm').reset();
+} else {
+    const data = await res.json();
+    showIndexToast(data.detail || "Error submitting review");
+}
+    } catch (e) { alert("Error submitting review"); }
         };
 
 

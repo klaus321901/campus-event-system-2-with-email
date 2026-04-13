@@ -82,7 +82,11 @@
         <a href="/" class="back-link">← Cancel and Go Back</a>
     </div>
 
-    <script>
+   <script>
+        if (localStorage.getItem('admin_token')) {
+            window.location.href = '/admin.html';
+        }
+
         document.getElementById('adminLoginForm').onsubmit = async (e) => {
             e.preventDefault();
             const password = document.getElementById('adminPassword').value;

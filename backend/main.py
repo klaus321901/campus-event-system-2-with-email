@@ -11,6 +11,18 @@ from pydantic import BaseModel
 import os
 import sys
 import subprocess
+from dotenv import load_dotenv
+import os
+from pathlib import Path
+env_path = Path(__file__).resolve().parent / '.env'
+print("[DEBUG] Looking for .env at:", env_path)
+print("[DEBUG] .env exists:", env_path.exists())
+load_dotenv(dotenv_path=env_path)
+print("[DEBUG] GEMINI KEY:", os.getenv("AIzaSyBDBmZYkeGIQkKwXaKG2qNm7VcaSP-KtTw"))
+load_dotenv()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY1")
+GEMINI_API_KEY2 = os.getenv("GEMINI_API_KEY2")
+print("[DEBUG] GEMINI KEY:", GEMINI_API_KEY)
 
 from . import models, database, auth
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -462,8 +474,8 @@ def create_feedback(event_id: int, feedback: FeedbackCreate, current_user: model
         models.Feedback.user_id == str(current_user.id)
     ).count()
 
-    if existing_count >= 3:
-        raise HTTPException(status_code=400, detail="Review limit reached. You can only post 3 reviews per event.")
+    if existing_count >= 1:
+        raise HTTPException(status_code=400, detail="You have already reviewed this event.")
 
     db_feedback = models.Feedback(
         event_id=event_id,
@@ -614,37 +626,192 @@ async def get_my_reminders(current_user: models.User = Depends(get_current_user)
 
 @app.post("/events/{event_id}/analyze")
 def analyze_event(event_id: int, db: Session = Depends(database.get_db)):
+    import google.generativeai as genai
+    from collections import Counter
+
     feedbacks = db.query(models.Feedback).filter(models.Feedback.event_id == event_id).all()
+    
     if not feedbacks:
-        return {"total": 0, "sentiment": {"positive": 0, "neutral": 0, "negative": 0}, "keywords": []}
-    
+        return {
+            "total": 0,
+            "average_rating": 0,
+            "sentiment": {"positive": 0, "neutral": 0, "negative": 0},
+            "keywords": [],
+            "rating_distribution": {"1": 0, "2": 0, "3": 0, "4": 0, "5": 0},
+            "comments": [],
+            "gemini": {
+                "summary": "No reviews yet.",
+                "improvement_suggestions": [],
+                "attendance_prediction": "Not enough data.",
+                "club_reputation": "Not enough data."
+            }
+        }
+
     total = len(feedbacks)
-    positive = sum(1 for f in feedbacks if f.rating >= 4)
-    negative = sum(1 for f in feedbacks if f.rating <= 2)
-    neutral = total - positive - negative
-    
-    # Simple Keyword Extraction
+    average_rating = round(sum(f.rating for f in feedbacks) / total, 1)
+
+    # Rating distribution
+    rating_dist = {"1": 0, "2": 0, "3": 0, "4": 0, "5": 0}
+    for f in feedbacks:
+        key = str(f.rating)
+        if key in rating_dist:
+            rating_dist[key] += 1
+
+    # Comments list
+    comments = [
+        {"user": f.user_name, "rating": f.rating, "comment": f.comment or ""}
+        for f in feedbacks
+    ]
+
+    # Keywords (simple word frequency for word cloud)
+    ignore_words = {
+        "the", "and", "was", "is", "it", "to", "in", "of", "a", "very",
+        "good", "bad", "event", "this", "that", "with", "for", "are", "were",
+        "had", "have", "has", "but", "not", "from", "they", "their", "been",
+        "would", "could", "should", "really", "also", "just", "more", "than",
+        "then", "when", "which", "there", "about", "will", "your", "was"
+    }
     words = []
-    ignore_words = {"the", "and", "was", "is", "it", "to", "in", "of", "a", "very", "good", "bad", "event"}
     for f in feedbacks:
         if f.comment:
             for word in f.comment.lower().split():
                 clean_word = "".join(c for c in word if c.isalnum())
                 if len(clean_word) > 3 and clean_word not in ignore_words:
                     words.append(clean_word)
-    
-    from collections import Counter
-    common_keywords = [w for w, c in Counter(words).most_common(5)]
+    keyword_counts = [{"word": w, "count": c} for w, c in Counter(words).most_common(15)]
+
+    # Gemini Analysis
+    gemini_result = {
+        "summary": "Analysis unavailable.",
+        "sentiment": {"positive": 0, "neutral": 0, "negative": 0},
+        "improvement_suggestions": [],
+        "attendance_prediction": "Not enough data.",
+        "club_reputation": "Not enough data."
+    }
+
+    # Get club name for reputation score
+    event = db.query(models.Event).filter(models.Event.id == event_id).first()
+    club_name = event.club_name if event else "Unknown"
+
+    # Get all events by same club with their average ratings for reputation
+    club_events = db.query(models.Event).filter(
+        models.Event.club_name == club_name,
+        models.Event.source_type == "manual"
+    ).all()
+
+    club_ratings = []
+    for ce in club_events:
+        feedbacks_for_event = db.query(models.Feedback).filter(models.Feedback.event_id == ce.id).all()
+        if feedbacks_for_event:
+            avg = sum(f.rating for f in feedbacks_for_event) / len(feedbacks_for_event)
+            club_ratings.append({"event": ce.title, "avg_rating": round(avg, 1), "reviews": len(feedbacks_for_event)})
+
+    try:
+        api_key = GEMINI_API_KEY or GEMINI_API_KEY2
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-2.5-flash-lite")
+
+        # Build prompt
+        reviews_text = "\n".join([
+            f"- Rating: {f.rating}/5, Comment: '{f.comment}'" if f.comment else f"- Rating: {f.rating}/5 (no comment)"
+            for f in feedbacks
+        ])
+
+        club_history = "\n".join([
+            f"- {r['event']}: {r['avg_rating']}/5 ({r['reviews']} reviews)"
+            for r in club_ratings
+        ]) if club_ratings else "No historical data available."
+
+        prompt = f"""You are analyzing student feedback for a college campus event.
+
+Event: {event.title if event else 'Unknown'}
+Club: {club_name}
+Total Reviews: {total}
+Average Rating: {average_rating}/5
+
+Reviews:
+{reviews_text}
+
+Club's event history:
+{club_history}
+
+Please respond ONLY with a valid JSON object in this exact format:
+{{
+    "summary": "One sentence overall summary of the event feedback",
+    "sentiment": {{
+        "positive": <percentage as integer 0-100>,
+        "neutral": <percentage as integer 0-100>,
+        "negative": <percentage as integer 0-100>
+    }},
+    "improvement_suggestions": [
+        "Suggestion 1",
+        "Suggestion 2",
+        "Suggestion 3"
+    ],
+    "attendance_prediction": "One sentence prediction about future attendance based on feedback",
+    "club_reputation": "One sentence assessment of the club's reputation based on all their events"
+}}
+
+Important: 
+- Sentiment percentages must add up to 100.
+- Be specific and based only on the actual reviews provided.
+- If there are fewer than 2 comments with actual text, set improvement_suggestions to ["Not enough comment data to generate specific suggestions."] only.
+- Never generate generic suggestions like 'encourage reviewers to comment' or 'investigate lower ratings'.
+- Only generate improvement suggestions if the same theme or issue is mentioned by at least 3 different reviewers. If no theme repeats across 3+ reviews, set improvement_suggestions to ["Not enough repeated feedback to generate specific suggestions."].
+- - Keep all text responses under 100 characters each. Be concise."""
+        response = model.generate_content(
+             prompt,
+             generation_config={"max_output_tokens": 1024, "temperature": 0.3}
+        )
+        raw = response.text.strip()
+
+        # Clean up markdown code blocks if present
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        raw = raw.strip()
+        print("[GEMINI RAW]", raw[:500])
+
+        import re
+        json_match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if json_match:
+            raw = json_match.group(0)
+        import json
+        try:
+             gemini_result = json.loads(raw)
+        except json.JSONDecodeError as je:
+            print("[JSON ERROR]", je)
+            print("[RAW THAT FAILED]", repr(raw))
+            raise
+               
+    except Exception as e:
+        print(f"[GEMINI ERROR] {e}")
+        # Fallback to rating-based sentiment
+        positive = sum(1 for f in feedbacks if f.rating >= 4)
+        negative = sum(1 for f in feedbacks if f.rating <= 2)
+        neutral = total - positive - negative
+        gemini_result["sentiment"] = {
+            "positive": round((positive / total) * 100),
+            "neutral": round((neutral / total) * 100),
+            "negative": round((negative / total) * 100)
+        }
+        gemini_result["summary"] = "AI analysis unavailable. Showing rating-based sentiment."
 
     return {
         "event_id": event_id,
         "total": total,
-        "sentiment": {
-            "positive": round((positive / total) * 100),
-            "neutral": round((neutral / total) * 100),
-            "negative": round((negative / total) * 100)
-        },
-        "keywords": common_keywords
+        "average_rating": average_rating,
+        "sentiment": gemini_result.get("sentiment", {"positive": 0, "neutral": 0, "negative": 0}),
+        "keywords": keyword_counts,
+        "rating_distribution": rating_dist,
+        "comments": comments,
+        "gemini": {
+            "summary": gemini_result.get("summary", ""),
+            "improvement_suggestions": gemini_result.get("improvement_suggestions", []),
+            "attendance_prediction": gemini_result.get("attendance_prediction", ""),
+            "club_reputation": gemini_result.get("club_reputation", "")
+        }
     }
 
 # --- ADMIN POWER TOOLS ---

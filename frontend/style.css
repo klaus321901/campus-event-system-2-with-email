@@ -975,3 +975,24 @@ header p {
     transform: translateY(-50%);
     cursor: pointer;
 }
+.rem-option-btn {
+    padding: 14px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: white;
+    border-radius: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: 0.3s;
+}
+
+.rem-option-btn:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+.rem-option-btn.selected {
+    background: var(--accent);
+    color: black;
+    border-color: var(--accent);
+}
